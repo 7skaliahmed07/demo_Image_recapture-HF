@@ -9,49 +9,46 @@ import io
 import os
 import gc
 
-# MEMORY OPTIMIZATION: Reduce TensorFlow memory usage
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # Suppress TF logs
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'  # Force CPU only
+# MEMORY OPTIMIZATION: Use TensorFlow Lite instead of full TensorFlow
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
-# Configure TensorFlow to use less memory
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-    try:
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-    except RuntimeError as e:
-        print(e)
-
-# Global variable for model
-model = None
+# Global variables
+interpreter = None
+input_details = None
+output_details = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup - load model
-    global model
-    print("🚀 Loading Keras model...")
+    # Startup - load TensorFlow Lite model
+    global interpreter, input_details, output_details
     
-    # MEMORY OPTIMIZATION: Clear any existing TensorFlow graphs
-    tf.keras.backend.clear_session()
-    gc.collect()
+    print("🚀 Loading TensorFlow Lite model...")
     
-    # Load model with optimizations
-    model = tf.keras.models.load_model(
-        'final_model.keras',
-        compile=False  # MEMORY OPTIMIZATION: Don't compile (we're only doing inference)
-    )
-    print("✅ Model loaded successfully!")
+    try:
+        # Load TFLite model and allocate tensors
+        interpreter = tf.lite.Interpreter(model_path="model.tflite")
+        interpreter.allocate_tensors()
+        
+        # Get input and output tensors
+        input_details = interpreter.get_input_details()
+        output_details = interpreter.get_output_details()
+        
+        print("✅ TensorFlow Lite model loaded successfully!")
+        print(f"📊 Input shape: {input_details[0]['shape']}")
+        print(f"📊 Input type: {input_details[0]['dtype']}")
+        
+    except Exception as e:
+        print(f"❌ Error loading model: {e}")
+        raise e
     
     yield
     
-    # Shutdown - cleanup
+    # Shutdown
     print("👋 Shutting down...")
-    if model is not None:
-        del model
-    tf.keras.backend.clear_session()
     gc.collect()
 
-app = FastAPI(title="Screen Recapture Detection", lifespan=lifespan)
+app = FastAPI(title="Screen Recapture Detection - TFLite", lifespan=lifespan)
 
 # CORS middleware
 app.add_middleware(
@@ -74,12 +71,12 @@ def home():
                 .result { margin: 20px 0; padding: 15px; border-radius: 5px; }
                 .original { background: #d4edda; color: #155724; }
                 .recaptured { background: #f8d7da; color: #721c24; }
-                .warning { background: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; }
+                .info { background: #d1ecf1; color: #0c5460; padding: 10px; border-radius: 5px; margin: 10px 0; }
             </style>
         </head>
         <body>
-            <div class="warning">
-                <strong>Note:</strong> This is a memory-optimized version. If you get errors, the service may be restarting due to memory limits.
+            <div class="info">
+                <strong>🚀 Memory Optimized Version</strong> - Using TensorFlow Lite for better performance
             </div>
             
             <h1>📸 Screen Recapture Detection</h1>
@@ -103,7 +100,7 @@ def home():
                     formData.append('file', fileInput.files[0]);
                     
                     const resultDiv = document.getElementById('result');
-                    resultDiv.innerHTML = '<div class="result">Processing... Please wait.</div>';
+                    resultDiv.innerHTML = '<div class="result">🔄 Processing image... Please wait.</div>';
                     
                     try {
                         const response = await fetch('/predict', {
@@ -112,7 +109,8 @@ def home():
                         });
                         
                         if (!response.ok) {
-                            throw new Error(`HTTP error! status: ${response.status}`);
+                            const errorText = await response.text();
+                            throw new Error(`Server error: ${response.status} - ${errorText}`);
                         }
                         
                         const data = await response.json();
@@ -137,7 +135,7 @@ def home():
                         resultDiv.innerHTML = `
                             <div class="result" style="background: #f8d7da; color: #721c24;">
                                 <p>Error: ${error.message}</p>
-                                <p>This might be due to memory limits. Try again in a moment.</p>
+                                <p><small>If this persists, the service might be restarting. Try again in 30 seconds.</small></p>
                             </div>`;
                     }
                 });
@@ -148,32 +146,35 @@ def home():
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    global model
+    global interpreter, input_details, output_details
     
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded. Service may be restarting.")
+    if interpreter is None:
+        raise HTTPException(status_code=503, detail="Model not loaded. Service may be initializing.")
     
     # Validate file type
     if not file.content_type.startswith('image/'):
         raise HTTPException(status_code=400, detail="Please upload an image file")
     
     try:
-        # MEMORY OPTIMIZATION: Process smaller images
+        # Read and process image
         contents = await file.read()
         img = Image.open(io.BytesIO(contents)).convert('RGB')
         
-        # Resize to smaller dimensions to save memory
-        img = img.resize((150, 150))  # Reduced from 224x224
+        # Preprocess image - adjust size based on your model's expected input
+        # Check what size your model expects and use that
+        target_size = (224, 224)  # Change this if your model expects different size
+        img = img.resize(target_size)
+        img_array = np.array(img, dtype=np.float32) / 255.0  # Normalize to [0,1]
+        img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
         
-        img_array = np.array(img) / 255.0
-        img_array = np.expand_dims(img_array, axis=0)
+        # Set input tensor
+        interpreter.set_tensor(input_details[0]['index'], img_array)
         
-        # Predict
-        prediction = model.predict(img_array, verbose=0)[0][0]
+        # Run inference
+        interpreter.invoke()
         
-        # MEMORY OPTIMIZATION: Clean up
-        del img_array
-        gc.collect()
+        # Get prediction results
+        prediction = interpreter.get_tensor(output_details[0]['index'])[0][0]
         
         # Interpret results
         is_recaptured = prediction > 0.5
@@ -194,13 +195,13 @@ async def predict(file: UploadFile = File(...)):
 
 @app.get("/health")
 async def health():
-    global model
+    global interpreter
     return {
-        "status": "healthy" if model is not None else "restarting",
-        "model_loaded": model is not None,
-        "message": "Screen Recapture Detection API"
+        "status": "healthy" if interpreter is not None else "initializing",
+        "model_loaded": interpreter is not None,
+        "message": "Screen Recapture Detection API (TensorFlow Lite)"
     }
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, workers=1)  # Single worker to save memory
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, workers=1)
