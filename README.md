@@ -1,49 +1,58 @@
+---
+title: Screen Recapture Detection
+emoji: 📸
+colorFrom: blue
+colorTo: purple
+sdk: gradio
+sdk_version: 4.0.0
+app_file: app.py
+pinned: false
+---
+
 # 📸 Screen Recapture Detection
 
-Web app that detects if an image is original or recaptured (photo of a screen) using deep learning.
+A deep learning web application that detects whether an image is **original** or **recaptured** (e.g., photo of a screen, monitor, or display).
 
 ## 🚀 Live Demo
 
-**Live App:** [https://screen-recapture-detection.onrender.com](https://screen-recapture-detection.onrender.com)
+**Try it here:** [https://huggingface.co/spaces/UzerDeveloper07/screen-recapture-detection](https://huggingface.co/spaces/UzerDeveloper07/screen-recapture-detection)
 
-*Note: Free instance may take 30-50 seconds to start after inactivity.*
+## 🎯 What It Does
 
-## 📋 Features
+- **Upload any image** (JPEG, PNG, etc.)
+- **AI-powered classification** detects if the image is:
+  - 📷 **Original Image** - Direct digital capture
+  - 🖥️ **Recaptured Image** - Photo taken of a screen/monitor
+- **Confidence scores** show prediction certainty
 
-- Upload any image (JPEG, PNG, etc.)
-- AI-powered classification: **Original** vs **Recaptured**
-- Confidence scores for predictions
-- Clean web interface
+## 🛠️ Technical Details
 
-## 🛠️ Tech Stack
+- **Model**: Custom Convolutional Neural Network (CNN)
+- **Framework**: TensorFlow/Keras → TensorFlow Lite (optimized)
+- **Backend**: FastAPI + Gradio interface
+- **Input**: 224×224 RGB images
+- **Output**: Binary classification with confidence scores
 
-- **Backend**: FastAPI, TensorFlow Lite
-- **Frontend**: HTML/CSS/JavaScript
-- **Model**: Custom CNN (15.9MB optimized)
-- **Hosting**: Render.com
+## 🎮 How to Use
 
-## 🎯 Usage
+1. **Visit** the live demo link above
+2. **Upload** an image file
+3. **Wait** for AI analysis (2-3 seconds)
+4. **View** results showing:
+   - Prediction (Original/Recaptured)
+   - Confidence percentage
+   - Raw prediction score
 
-1. Visit the live app
-2. Upload an image
-3. Get instant classification with confidence score
+## 💡 Use Cases
 
-## 🔧 API
+- **Digital forensics** - Detect screen-captured evidence
+- **Content moderation** - Identify reposted screen content
+- **Academic integrity** - Detect screenshots of online materials
+- **Image authentication** - Verify original vs secondary captures
 
-- `POST /predict` - Classify images
-- `GET /health` - Service status
+## 🔧 Model Performance
 
-```bash
-curl -X POST -F "file=@image.jpg" https://screen-recapture-detection.onrender.com/predict
-```
-
-## 🚀 Run Locally
-
-```bash
-git clone https://github.com/7skaliahmed07/demo_Image_recapture-Render.git
-cd demo_Image_recapture-Render
-pip install -r requirements.txt
-python app.py
-```
-
-Visit `http://localhost:8000`
+- **Model Size**: 15.9 MB (TensorFlow Lite optimized)
+- **Inference Time**: < 3 seconds
+- **Accuracy**: [Add your model's accuracy here if known]
+- **Optimized** for web deployment with minimal memory usage
